@@ -25,7 +25,6 @@ async function runMcpTool(toolName, toolArgs) {
             arguments: toolArgs
         });
         
-        // Parsing output dari MCP
         if (result.content && result.content.length > 0) {
             try {
                 return JSON.parse(result.content[0].text);
@@ -45,29 +44,30 @@ app.get('/api/request-otp', async (req, res) => {
 
     try {
         const result = await runMcpTool('eq_login', { phone });
-        res.json({ success: true, data: result });
+        // Kembalikan transId (jika ada) ke bot WA
+        res.json({ success: true, data: result, transId: result.transId || result.trans_id || result.data?.transId || result.data?.trans_id });
     } catch (error) {
         res.status(500).json({ error: 'Gagal minta OTP', detail: error.message });
     }
 });
 
 app.post('/api/submit-otp', async (req, res) => {
-    const { phone, otp } = req.body;
+    const { phone, otp, transId } = req.body;
     if (!phone || !otp) return res.status(400).json({ error: 'Nomor dan OTP wajib diisi' });
 
     try {
-        // 1. Validasi OTP
-        const submitResult = await runMcpTool('eq_submit_otp', { phone, otp });
+        // Masukkan transId ke parameter MCP
+        const args = { phone, otp };
+        if (transId) args.trans_id = transId; 
         
-        // Jika OTP salah atau gagal login
+        const submitResult = await runMcpTool('eq_submit_otp', args);
+        
         if (submitResult.isError || !submitResult.success) {
             return res.status(400).json({ error: 'OTP Salah atau gagal login' });
         }
 
-        // 2. 🔥 JIKA SUKSES, LANGSUNG AMBIL KUOTA
         const quotaResult = await runMcpTool('eq_get_quota', { phone });
         
-        // 3. Kirim HANYA data kuota (jangan kirim submitResult yang berisi token!)
         res.json({ 
             success: true, 
             quota: quotaResult.quotas || quotaResult.data || quotaResult 
