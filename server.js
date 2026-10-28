@@ -1,15 +1,44 @@
 const express = require('express');
 const cors = require('cors');
-const { exec } = require('child_process');
-const util = require('util');
 const path = require('path');
+const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
 
-const execPromise = util.promisify(exec);
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Path ke executable EnQuota
 const ENQUOTA_PATH = path.join(__dirname, 'EnQuota', 'dist', 'index.js');
+
+// Fungsi helper untuk menjalankan EnQuota MCP Client
+async function runMcpTool(toolName, toolArgs) {
+    // 1. Siapkan transport untuk menjalankan EnQuota sebagai MCP server
+    const transport = new StdioClientTransport({
+        command: 'node',
+        args: [ENQUOTA_PATH, '--mcp']
+    });
+
+    // 2. Inisialisasi client
+    const client = new Client({ name: 'xl-api-client', version: '1.0.0' });
+    
+    try {
+        // 3. Hubungkan ke EnQuota
+        await client.connect(transport);
+        
+        // 4. Panggil tool yang diinginkan (eq_login atau eq_submit_otp)
+        const result = await client.callTool({
+            name: toolName,
+            arguments: toolArgs
+        });
+        
+        // 5. Kembalikan hasil
+        return result;
+    } finally {
+        // 6. Selalu tutup koneksi
+        await client.close();
+    }
+}
 
 // Endpoint 1: Minta OTP
 app.get('/api/request-otp', async (req, res) => {
@@ -17,19 +46,15 @@ app.get('/api/request-otp', async (req, res) => {
     if (!phone) return res.status(400).json({ error: 'Nomor HP wajib diisi' });
 
     try {
-        // 🔥 PERBAIKAN: Gunakan argumen posisi, bukan --phone
-        // Format: enquota login <nomor>
-        const { stdout } = await execPromise(`node ${ENQUOTA_PATH} login ${phone}`, { timeout: 30000 });
+        console.log(`Meminta OTP untuk ${phone}...`);
         
-        let result;
-        try {
-            result = JSON.parse(stdout);
-        } catch (e) {
-            // Jika output bukan JSON, kirim sebagai teks (mungkin berisi instruksi OTP)
-            result = { success: true, message: stdout };
-        }
+        // Panggil tool eq_login dengan parameter phone
+        const result = await runMcpTool('eq_login', { phone });
         
-        res.json(result);
+        console.log('Hasil dari EnQuota:', JSON.stringify(result, null, 2));
+        
+        // Kirim balik hasil ke bot WhatsApp
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('Error request OTP:', error.message);
         res.status(500).json({ error: 'Gagal minta OTP', detail: error.message });
@@ -42,23 +67,38 @@ app.post('/api/submit-otp', async (req, res) => {
     if (!phone || !otp) return res.status(400).json({ error: 'Nomor dan OTP wajib diisi' });
 
     try {
-        // 🔥 PERBAIKAN: Sesuaikan format perintah submit OTP.
-        // Berdasarkan MCP tool reference, parameternya adalah: otp, phone?, trans_id?
-        // Kita coba format CLI yang paling mungkin:
-        // enquota submit-otp <phone> <otp> <transId>
-        const { stdout } = await execPromise(`node ${ENQUOTA_PATH} submit-otp ${phone} ${otp} ${transId}`, { timeout: 30000 });
+        console.log(`Memvalidasi OTP untuk ${phone}...`);
         
-        let result;
-        try {
-            result = JSON.parse(stdout);
-        } catch (e) {
-            result = { success: true, message: stdout };
-        }
+        // Siapkan argumen untuk eq_submit_otp
+        const toolArgs = { otp, phone };
+        if (transId) toolArgs.trans_id = transId; // Sertakan trans_id jika ada
         
-        res.json(result);
+        const result = await runMcpTool('eq_submit_otp', toolArgs);
+        
+        console.log('Hasil validasi:', JSON.stringify(result, null, 2));
+        
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error('Error submit OTP:', error.message);
         res.status(500).json({ error: 'Gagal validasi OTP', detail: error.message });
+    }
+});
+
+// Endpoint 3: Ambil Kuota (opsional, setelah login sukses)
+app.get('/api/get-quota', async (req, res) => {
+    const { phone } = req.query;
+    if (!phone) return res.status(400).json({ error: 'Nomor HP wajib diisi' });
+
+    try {
+        console.log(`Mengambil kuota untuk ${phone}...`);
+        
+        // Panggil tool eq_get_quota
+        const result = await runMcpTool('eq_get_quota', { phone });
+        
+        res.json({ success: true, data: result });
+    } catch (error) {
+        console.error('Error get quota:', error.message);
+        res.status(500).json({ error: 'Gagal ambil kuota', detail: error.message });
     }
 });
 
