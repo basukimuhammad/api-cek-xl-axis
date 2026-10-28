@@ -17,19 +17,38 @@ app.get('/api/request-otp', async (req, res) => {
 
     try {
         const { stdout } = await execPromise(`node ${ENQUOTA_PATH} eq_login --phone ${phone}`, { timeout: 30000 });
-        res.json({ success: true, message: stdout });
+        
+        // Coba parsing JSON dari output EnQuota
+        let result;
+        try {
+            result = JSON.parse(stdout);
+        } catch (e) {
+            // Jika bukan JSON, kirim sebagai teks
+            result = { success: true, message: stdout };
+        }
+        
+        res.json(result);
     } catch (error) {
         res.status(500).json({ error: 'Gagal minta OTP', detail: error.message });
     }
 });
 
 app.post('/api/submit-otp', async (req, res) => {
-    const { phone, otp } = req.body;
-    if (!phone || !otp) return res.status(400).json({ error: 'Nomor dan OTP wajib diisi' });
+    const { phone, otp, transId } = req.body;
+    if (!phone || !otp || !transId) return res.status(400).json({ error: 'Data tidak lengkap' });
 
     try {
-        const { stdout } = await execPromise(`node ${ENQUOTA_PATH} eq_submit_otp --phone ${phone} --otp ${otp}`, { timeout: 30000 });
-        res.json({ success: true, message: stdout });
+        // Meneruskan transId ke EnQuota
+        const { stdout } = await execPromise(`node ${ENQUOTA_PATH} eq_submit_otp --phone ${phone} --otp ${otp} --trans-id ${transId}`, { timeout: 30000 });
+        
+        let result;
+        try {
+            result = JSON.parse(stdout);
+        } catch (e) {
+            result = { success: true, message: stdout };
+        }
+        
+        res.json(result);
     } catch (error) {
         res.status(500).json({ error: 'Gagal validasi OTP', detail: error.message });
     }
