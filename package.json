@@ -2,9 +2,9 @@
   "name": "xl-otp-api",
   "version": "1.0.0",
   "main": "server.js",
-  "scripts": {
+    "scripts": {
     "start": "node server.js",
-    "build-enquota": "git clone https://github.com/Najihh/EnQuota.git && cd EnQuota && npm install && npm run build"
+    "build-enquota": "rm -rf EnQuota && git clone https://github.com/Najihh/EnQuota.git && cd EnQuota && npm install && npm run build"
   },
   "dependencies": {
     "express": "^4.18.2",
