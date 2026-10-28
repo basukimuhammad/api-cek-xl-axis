@@ -11,18 +11,21 @@ app.use(express.json());
 
 const ENQUOTA_PATH = path.join(__dirname, 'EnQuota', 'dist', 'index.js');
 
+// Endpoint 1: Minta OTP
 app.get('/api/request-otp', async (req, res) => {
     const { phone } = req.query;
     if (!phone) return res.status(400).json({ error: 'Nomor HP wajib diisi' });
 
     try {
-        // 🔥 PERBAIKAN: Gunakan 'login' bukan 'eq_login'
-        const { stdout } = await execPromise(`node ${ENQUOTA_PATH} login --phone ${phone}`, { timeout: 30000 });
+        // 🔥 PERBAIKAN: Gunakan argumen posisi, bukan --phone
+        // Format: enquota login <nomor>
+        const { stdout } = await execPromise(`node ${ENQUOTA_PATH} login ${phone}`, { timeout: 30000 });
         
         let result;
         try {
             result = JSON.parse(stdout);
         } catch (e) {
+            // Jika output bukan JSON, kirim sebagai teks (mungkin berisi instruksi OTP)
             result = { success: true, message: stdout };
         }
         
@@ -33,13 +36,17 @@ app.get('/api/request-otp', async (req, res) => {
     }
 });
 
+// Endpoint 2: Submit OTP
 app.post('/api/submit-otp', async (req, res) => {
     const { phone, otp, transId } = req.body;
     if (!phone || !otp) return res.status(400).json({ error: 'Nomor dan OTP wajib diisi' });
 
     try {
-        // 🔥 PERBAIKAN: Gunakan 'submit-otp' dan masukkan trans-id
-        const { stdout } = await execPromise(`node ${ENQUOTA_PATH} submit-otp --phone ${phone} --otp ${otp} --trans-id ${transId}`, { timeout: 30000 });
+        // 🔥 PERBAIKAN: Sesuaikan format perintah submit OTP.
+        // Berdasarkan MCP tool reference, parameternya adalah: otp, phone?, trans_id?
+        // Kita coba format CLI yang paling mungkin:
+        // enquota submit-otp <phone> <otp> <transId>
+        const { stdout } = await execPromise(`node ${ENQUOTA_PATH} submit-otp ${phone} ${otp} ${transId}`, { timeout: 30000 });
         
         let result;
         try {
